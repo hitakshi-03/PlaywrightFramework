@@ -1,0 +1,17 @@
+node_modules/
+
+.env
+.env.*
+!.env.example
+
+reports/
+test-results/
+playwright-report/
+blob-report/
+allure-results/
+allure-report/
+playwright/.auth/
+storage-state/
+*.storage-state.json
+.playwright-mcp/
+docs\framework-recreation-prompt.md

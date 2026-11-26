@@ -1,0 +1,29 @@
+{
+  "name": "scriptedqa-playwright-framework",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright and TypeScript test framework for Scripted QA",
+  "scripts": {
+    "clean:allure-results": "node -e \"require('node:fs').rmSync('reports/allure-results', { recursive: true, force: true })\"",
+    "pretest": "npm run clean:allure-results",
+    "test": "playwright test",
+    "pretest:smoke": "npm run clean:allure-results",
+    "test:smoke": "playwright test --project=chromium --grep @smoke",
+    "pretest:regression": "npm run clean:allure-results",
+    "test:regression": "playwright test --project=chromium tests/regression",
+    "report:allure": "allure generate reports/allure-results --clean -o reports/allure-html",
+    "report:allure:open": "allure open reports/allure-html",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "@types/node": "^26.6.6",
+    "allure-commandline": "^2.46.1",
+    "allure-playwright": "^3.15.0",
+    "dotenv": "^18.0.10",
+    "typescript": "^7.0.2"
+  }
+}

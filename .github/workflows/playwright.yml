@@ -1,0 +1,165 @@
+name: Playwright
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Select the suite to run
+        type: choice
+        required: true
+        default: smoke
+        options:
+          - smoke
+          - regression
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playwright-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    if: ${{ github.event_name == 'pull_request' || inputs.suite == 'smoke' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Validate smoke target
+        env:
+          BASE_URL: ${{ vars.E2E_SMOKE_BASE_URL }}
+        run: |
+          node <<'NODE'
+          let target;
+          try {
+            target = new URL(process.env.BASE_URL ?? '');
+          } catch {
+            throw new Error('Set E2E_SMOKE_BASE_URL to an absolute HTTP(S) URL in Actions variables.');
+          }
+          if (!['http:', 'https:'].includes(target.protocol)) {
+            throw new Error('E2E_SMOKE_BASE_URL must use HTTP or HTTPS.');
+          }
+          NODE
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Type-check framework
+        run: npm run typecheck
+
+      - name: Run smoke tests
+        id: playwright
+        env:
+          BASE_URL: ${{ vars.E2E_SMOKE_BASE_URL }}
+        run: npm run test:smoke
+
+      - name: Generate Allure HTML report
+        if: ${{ always() && steps.playwright.outcome != 'skipped' }}
+        run: |
+          if [ -d reports/allure-results ] && find reports/allure-results -maxdepth 1 -type f -name '*-result.json' -print -quit | grep -q .; then
+            npm run report:allure
+          else
+            echo "No Allure result files were produced; report generation was skipped."
+          fi
+
+      - name: Upload Playwright reports and failure artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-${{ github.run_id }}
+          path: |
+            reports/playwright-html/
+            reports/allure-results/
+            reports/allure-html/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+  regression:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.suite == 'regression' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: scriptedqa-e2e-nonprod
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Validate protected regression configuration
+        env:
+          BASE_URL: ${{ vars.E2E_BASE_URL }}
+          E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: |
+          node <<'NODE'
+          if (!process.env.E2E_USERNAME?.trim() || !process.env.E2E_PASSWORD) {
+            throw new Error('Configure E2E_USERNAME and E2E_PASSWORD as secrets in the protected GitHub environment.');
+          }
+          let target;
+          try {
+            target = new URL(process.env.BASE_URL ?? '');
+          } catch {
+            throw new Error('Configure E2E_BASE_URL as an Actions variable in the protected GitHub environment.');
+          }
+          if (!['http:', 'https:'].includes(target.protocol)) {
+            throw new Error('E2E_BASE_URL must use HTTP or HTTPS.');
+          }
+          const hostname = target.hostname.toLowerCase();
+          if (hostname === 'scriptedqa.com' || hostname.endsWith('.scriptedqa.com')) {
+            throw new Error('Regression requires an owner-approved non-public target; public Scripted QA is blocked.');
+          }
+          NODE
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Type-check framework
+        run: npm run typecheck
+
+      - name: Run regression tests
+        id: playwright
+        env:
+          BASE_URL: ${{ vars.E2E_BASE_URL }}
+          E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: npm run test:regression
+
+      - name: Generate Allure HTML report
+        if: ${{ always() && steps.playwright.outcome != 'skipped' }}
+        run: |
+          if [ -d reports/allure-results ] && find reports/allure-results -maxdepth 1 -type f -name '*-result.json' -print -quit | grep -q .; then
+            npm run report:allure
+          else
+            echo "No Allure result files were produced; report generation was skipped."
+          fi
+
+      - name: Upload Playwright reports and failure artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-regression-${{ github.run_id }}
+          path: |
+            reports/playwright-html/
+            reports/allure-results/
+            reports/allure-html/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 7
